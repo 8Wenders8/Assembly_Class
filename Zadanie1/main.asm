@@ -113,7 +113,7 @@ STRING_TO_HEX	PROC
 		MOV BX, DX			; Move current pointer to text buffer to BX
 		MOV AX, [BX]			; Store value at that address to AX
 		POP BX				; Restore BX from stack
-_
+
 		CALL ASCII_TO_HEX		; Call procedure ASCII_TO_HEX
 		INC CX				; Increment the number of chars transformed
 		INC DX				; Increment text buffer pointer
