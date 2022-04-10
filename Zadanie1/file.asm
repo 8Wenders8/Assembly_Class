@@ -1,27 +1,42 @@
 LOCALS @@
 .MODEL SMALL
 .STACK 100h
-ORG 100H
 .DATA
 GLOBAL	F_OPEN : PROC	
 GLOBAL F_CLOSE : PROC
 GLOBAL F_READ_LINE : PROC
 
 EXTRN TEXT_POINTER : byte
-EXTRN FILE_NAME : byte
+EXTRN FILE_POINTER : byte
 EXTRN BUFFER_SIZE : word
 EXTRN CHARS_READ : word
 EXTRN FILE_HANDLE : word
 
+ERR_OPEN	DB "Err at opening the file!$"
+ERR_READ	DB "Err at reading the file!$"
+
 .CODE
+
 
 F_OPEN	PROC
 		MOV AX, 3D00H			; Prepare for opening file for reading
-		MOV DX, OFFSET FILE_NAME	; Prepare file name - Store required file name to DX register
+		XOR DX, DX
+		MOV DL, FILE_POINTER	; Prepare file name - Store required file name to DX register
 		INT 21H				; Interupt - DOS API 21H - OPEN FILE 3DH - READ 00H
 		MOV [FILE_HANDLE], AX		; Store obtained file handler to a variable
+		JNC @@EXIT
+
+		MOV DX, OFFSET ERR_OPEN
+		MOV AH, 9H
+		INT 21H		
+		MOV AX, 0
+		TEST AX, AX
 		RET
-F_OPEN		ENDP
+
+		@@EXIT:
+		TEST SP, SP	
+		RET
+F_OPEN	ENDP
 
 F_CLOSE		PROC
 		MOV AX, 3E00H			; Prepare for closing the file
@@ -38,7 +53,16 @@ F_READ_LINE	PROC
 		MOV DL, TEXT_POINTER		; Prepare buffer for data - Store text buffer address to DX register
 		MOV CX, BUFFER_SIZE		; Prepare number of bytes to read - Store text buffer size to CX register
 		INT 21H				; Interupt - DOS API 21H - READ FROM FILE 3FH
+		JNC @@TEST
+				
+		MOV DX, OFFSET ERR_READ
+		MOV AH, 9H
+		INT 21H		
+		MOV AX, 0
+		TEST AX, AX
+		JZ @@EXIT
 
+		@@TEST:
 		; TEST IF EOF			
 		MOV [CHARS_READ], AX		; Store number of bytes read to CHARS_READ
 		TEST AX,AX			; Test if AX=0, means EOF ( End of file )

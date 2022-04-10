@@ -37,16 +37,14 @@ ASCII_TO_HEX	PROC
 ASCII_TO_HEX	ENDP
 
 
-STRING_TO_HEX	PROC				; DX - INPUT, BX - OUTPUT
+STRING_TO_HEX	PROC	 			; DX - INPUT, BX - OUTPUT
 		; PREPARE REGISTERS
 		XOR BX, BX
 		XOR CX, CX			; Reset CX register, counter of characters changed to hex
 		XOR DX, DX
 
-		MOV DL, TEXT_POINTER
-		MOV BL, OUTPUT_POINTER
-		;MOV DX, OFFSET TEXT_BUFFER	; Move first address of text buffer array to DX
-		;MOV BX, OFFSET OUTPUT		; Move first address of output array to BX
+		MOV DL, TEXT_POINTER		; Move first address of text buffer array to DX
+		MOV BL, OUTPUT_POINTER		; Move first address of output array to BX
 		ADD BX, 7			; For numbers
 
 		@@LOOP_STRING:
