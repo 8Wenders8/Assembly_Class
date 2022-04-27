@@ -12,6 +12,7 @@
 //	Platform: Intel 386/Linux/C or Intel 386/FreeBSD/C
 //-------------------------------------------------------------------
 
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,6 +34,7 @@
 
 #define handle_error(msg)  { perror(msg); exit(EXIT_FAILURE); }
 #define unknown_error(msg) { printf("%s \"%s\"\n", UNKNOWN_ARG, msg); exit(EXIT_FAILURE); }
+#define err_msg(msg) { printf("%s\n", msg); exit(EXIT_FAILURE); } 
 
 /* Conectivity variables */
 char *OPTIONS[] = {SERVER_ARG, CLIENT_ARG, PORT_ARG, PATH_ARG, HELP_ARG, NULL};
@@ -84,7 +86,7 @@ void wsh_arg_check(char **argv){
 
 /* Function for checking if the options '-p' or '-u' and the input data were given  */
 void wsh_conn_check(int argc, char **argv, int short_arg ){
-	if((argc = argc - 1 - !short_arg)){
+	if((argc = argc - 1 - !short_arg) > 0){
 		int index = short_arg ? 1 : 2;
 		switch(argv[index][1]){
 			case 'p':{ 
@@ -105,29 +107,22 @@ void wsh_conn_check(int argc, char **argv, int short_arg ){
 	}
 }
 
-void wsh_server_socket(){
-    int sock_fd, conn_fd;
-    struct sockaddr_un server_addr, client_addr;
-    socklen_t client_addr_size;
-
-	if((sock_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) // Create a socket endpoint, if successful returns file descriptor.
+void wsh_server_socket(int *sock_fd, struct sockaddr_un *server_addr){
+	/* Create a socket endpoint, if successful returns file descriptor. */
+	if((*sock_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) 
 			handle_error("socket");		
-
-    memset(&server_addr, 0, sizeof(server_addr));	// Init my_addr ( structure ) with zeros
-    server_addr.sun_family = AF_UNIX;			// set family localost AF_UNIX
-
-    strncpy(server_addr.sun_path, MY_SOCK_PATH, sizeof(server_addr.sun_path) - 1); // Copy MY_SOCK_PATH to my_addr_sun_path
-
-    if (bind(sock_fd, (struct sockaddr *) &server_addr, sizeof(server_addr)) == -1)
+	/* Init my_addr structure with zeors. */
+    memset(server_addr, 0, sizeof(*server_addr));	
+	/* Set family localhost AF_UNIX. */
+    server_addr->sun_family = AF_UNIX;
+	/* Copy MY_SOCK_PATH to my_addr_sun_path. */
+    strncpy(server_addr->sun_path, PATH, sizeof(server_addr->sun_path) - 1);
+	/* Bind socket. */
+    if (bind(*sock_fd, (struct sockaddr *) server_addr, sizeof(*server_addr)) == -1)
         handle_error("bind");
-
-    if (listen(sock_fd, LISTEN_BACKLOG) == -1)
+	/* Listen at the socket */
+    if (listen(*sock_fd, LISTEN_BACKLOG) == -1)
         handle_error("listen");
-
-    client_addr_size = sizeof(client_addr);
-
-    if((conn_fd = accept(sock_fd, (struct sockaddr *) &client_addr, &client_addr_size)) == -1)
-        handle_error("accept");
 }
 
 void wsh_help(){
@@ -135,10 +130,39 @@ void wsh_help(){
 	exit(EXIT_SUCCESS);
 }
 
+void wsh_prompt(){
+	printf(">>> ");
+}
+
 void wsh_server_loop(){
+    int sock_fd, conn_fd;
+    struct sockaddr_un server_addr, client_addr;
+    socklen_t client_addr_size;
 	printf("Server\n");
-	printf("Port: %s\n", PORT == NULL ? "Undefined" : PORT);
-	printf("Socket path: %s\n", PATH == NULL ? "Undefined" : PATH);
+	if(!PORT){
+		if(!PATH){
+			PATH = (char*) malloc(sizeof(MY_SOCK_PATH));	
+			strcpy(PATH, MY_SOCK_PATH); 
+			printf("No socket path given. Setting up default socket path..\n");
+		}
+		printf("Socket path: %s\n", PATH);
+		wsh_server_socket(&sock_fd, &server_addr);
+	} else { printf("Port: %s\n", PORT); }
+
+	while(1){
+		/* Client addr. */
+    	client_addr_size = sizeof(client_addr);
+		/* Connection. */
+    	if((conn_fd = accept(sock_fd, (struct sockaddr *) &client_addr, &client_addr_size)) == -1)
+        	handle_error("accept");
+
+		while(1){
+			char BUFF[1024];
+			int n = read(conn_fd, BUFF, sizeof(BUFF));
+			if(n) printf("%.*s\n", n, BUFF);
+			//printf("");
+		}
+	}
 	//while(1){
 	//	wsh_read();
 	//	wsh_parse();
@@ -147,14 +171,52 @@ void wsh_server_loop(){
 
 
 void wsh_client_loop(){
+	int sock_fd, conn_fd;
+    struct sockaddr_un server_addr;
+    socklen_t server_addr_size;
+
 	printf("Client\n");
+	
+	if(!PORT){
+		if(!PATH){
+			PATH = (char*) malloc(sizeof(MY_SOCK_PATH));	
+			strcpy(PATH, MY_SOCK_PATH); 
+			printf("No socket path given. Setting up default socket path..\n");
+		}
+		printf("Socket path: %s\n", PATH);
+
+		if((sock_fd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) 
+			handle_error("socket");		
+
+    	memset(&server_addr, 0, sizeof(server_addr));	
+		/* Set family localhost AF_UNIX. */
+    	server_addr.sun_family = AF_UNIX;
+		/* Copy MY_SOCK_PATH to my_addr_sun_path. */
+    	strncpy(server_addr.sun_path, PATH, sizeof(server_addr.sun_path) - 1);
+		
+		server_addr_size = sizeof(server_addr);
+
+    	if((conn_fd = connect(sock_fd, (struct sockaddr *) &server_addr, server_addr_size)) == -1)
+        	handle_error("connect");
+
+	} else { printf("Port: %s\n", PORT); }
+
+	while(1){
+		wsh_prompt();
+
+		char BUFF[1024] = { '\0' };
+		scanf("%s", BUFF);
+		write(sock_fd, BUFF, sizeof(BUFF));
+	}
+
+
 }
 
 void wsh_mode(short int mode){
 	switch(mode){
 		case 0: wsh_server_loop(); break;
 		case 1: wsh_client_loop(); break;
-		default: printf("Error at choosing mode\n"); break;
+		default: err_msg("Error at choosing mode"); break;
 	}
 }
 
