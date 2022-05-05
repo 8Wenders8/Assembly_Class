@@ -25,23 +25,64 @@ void wsh_prompt(){
 	printf(">>> ");
 }
 
+int wsh_read_socket(char **buffer, uint32_t *buffer_size){
+	uint32_t recv_size;
+	int ret;
+	char *temp;
+	if((ret = read(conn_fd, &recv_size, sizeof(uint32_t))) == -1)
+		handle_error("read");
+	
+	if(!ret) return 0;
+	*buffer_size = ntohl(recv_size);
+
+	if(*buffer_size > BUFF_SIZE){
+		if(!(temp = realloc(*buffer, *buffer_size)))
+			err_msg("Error at reallocating space");
+		*buffer = temp;	
+	}
+	
+	if((ret = read(conn_fd, *buffer, *buffer_size)) == -1)
+		handle_error("read");
+
+	return ret;
+}
+
+
 void wsh_server_loop(){
-	wsh_server();
 	while(1){
+		wsh_server();
 		wsh_accept();
+		char *buffer;
+		if(!(buffer = (char*) malloc(BUFF_SIZE * sizeof(char))))
+			err_msg("Error at allocating space");
+
 		while(1){
+			uint32_t buffer_size = BUFF_SIZE;
 			/* Read. */
-			char BUFF[1024] = { '\0' };
-			int n = read(conn_fd, BUFF, sizeof(BUFF));
-			if(n) printf("%.*s\n", n, BUFF);
-			int res;
-			if(!(res = strcmp(BUFF, "quit"))){
+			if(!wsh_read_socket(&buffer, &buffer_size)){
+				printf("Client disconnected..\n");
+				break;
+			}
+			printf("%s\n", buffer);
+
+			if(!strcmp(buffer, "quit")){
 				printf("Quitting..\n");
 				break;
 			}
+			if(!strcmp(buffer, "halt")){
+				free(buffer);
+				exit(EXIT_SUCCESS);
+			}
 			/* Parse. */
 			/* Execute. */
+
+			memset(buffer, '\0', buffer_size);
+			if(!(buffer = (char*) realloc(buffer, BUFF_SIZE)))
+				err_msg("Error at reallocating space");
 		}
+		close(sock_fd);
+		close(conn_fd);
+		unlink(PATH);
 	}
 }
 
@@ -49,7 +90,7 @@ void wsh_server_loop(){
 void wsh_read_line(char** buffer, int* buffer_size){
 	int index = 0, c;
 	while((c = getchar()) != EOF && c != '\n'){
-		if(index >= *buffer_size){
+		if(index >= *buffer_size - 1){
 			*buffer_size += BUFF_SIZE;
 			if(!(*buffer = (char*) realloc(*buffer, *buffer_size * sizeof(char)))) 
 				err_msg("Error at reallocating space");
@@ -70,8 +111,16 @@ void wsh_client_loop(){
 	while(1){
 		wsh_prompt();
 		wsh_read_line(&buffer, &buffer_size);
+
+		uint32_t send_size = htonl(buffer_size);
+		write(sock_fd, &send_size, sizeof(uint32_t));
+
 		write(sock_fd, buffer, buffer_size);
+		if(!strcmp(buffer, "quit") || !strcmp(buffer, "halt")) break;
 	}
+	free(buffer);
+	close(sock_fd);
+	close(conn_fd);
 }
 
 void wsh_mode(short int mode){

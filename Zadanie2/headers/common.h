@@ -1,7 +1,7 @@
 #ifndef COMMON_H_
 #define COMMON_H_
 
-#include <pthread.h>
+#include <arpa/inet.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,7 +22,7 @@
 #define LISTEN_BACKLOG 50
 #define HELP_MSG	"Interactive shell by Matej Volansky.\nFormat: wsh [OPTIONS]"
 
-#define BUFF_SIZE	256
+#define BUFF_SIZE	10
 
 #define handle_error(msg)  { perror(msg); exit(EXIT_FAILURE); }
 #define err_msg(msg) { printf("%s\n", msg); exit(EXIT_FAILURE); } 
