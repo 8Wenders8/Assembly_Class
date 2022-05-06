@@ -48,22 +48,57 @@ int wsh_read_socket(char **buffer, uint32_t *buffer_size){
 }
 
 
+char** wsh_parse(char *buffer, uint32_t buffer_size, int *index){
+	char *token, **args, **temp;
+	int temp_index = 0;
+	if(!(args = (char**) malloc(buffer_size * sizeof(char*))))
+		err_msg("Error at allocating space");
+
+	if(!(temp = (char**) malloc(buffer_size * sizeof(char*))))
+		err_msg("Error at allocating space");
+
+	token = strtok(buffer, "\"");
+	while(token){
+		temp[temp_index++] = token;
+		token = strtok(NULL, "\"");
+	}
+
+	for(int i = 0; i < temp_index; i++){
+		if(!((i + 1) % 2)){
+			args[(*index)++] = temp[i];
+			continue;
+		}
+
+		token = strtok(temp[i], " \t\r");
+		while(token){
+			args[(*index)++] = token;
+			token = strtok(NULL, " \t\r");
+		}
+	}
+
+	args[*index] = NULL;
+	return args;
+}
+
 void wsh_server_loop(){
 	while(1){
 		wsh_server();
 		wsh_accept();
-		char *buffer;
+		char *buffer, **args;
 		if(!(buffer = (char*) malloc(BUFF_SIZE * sizeof(char))))
 			err_msg("Error at allocating space");
 
 		while(1){
 			uint32_t buffer_size = BUFF_SIZE;
+			int argc = 0;
 			/* Read. */
 			if(!wsh_read_socket(&buffer, &buffer_size)){
 				printf("Client disconnected..\n");
 				break;
 			}
-			printf("%s\n", buffer);
+
+			args = wsh_parse(buffer, buffer_size, &argc);
+			for(int i=0;i<argc;i++) printf("%s\n",args[i]);
 
 			if(!strcmp(buffer, "quit")){
 				printf("Quitting..\n");
@@ -71,6 +106,7 @@ void wsh_server_loop(){
 			}
 			if(!strcmp(buffer, "halt")){
 				free(buffer);
+				// TODO FREE ARGS:for(i
 				exit(EXIT_SUCCESS);
 			}
 			/* Parse. */
