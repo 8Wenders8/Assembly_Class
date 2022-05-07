@@ -2,14 +2,16 @@
 #define COMMON_H_
 
 #include <arpa/inet.h>
+#include <pwd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <sys/un.h>
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <time.h>
+#include <unistd.h>
 
 #define SERVER_ARG	"-s"
 #define CLIENT_ARG	"-c"
@@ -22,7 +24,7 @@
 #define LISTEN_BACKLOG 50
 #define HELP_MSG	"Interactive shell by Matej Volansky.\nFormat: wsh [OPTIONS]"
 
-#define BUFF_SIZE	10
+#define BUFF_SIZE	256
 
 #define handle_error(msg)  { perror(msg); exit(EXIT_FAILURE); }
 #define err_msg(msg) { printf("%s\n", msg); exit(EXIT_FAILURE); } 

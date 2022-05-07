@@ -48,7 +48,7 @@ void wsh_server(){
     if (listen(sock_fd, LISTEN_BACKLOG) == -1)
         handle_error("listen");
 
-	printf("[Server] ");
+	//printf("[Server] ");
 }
 
 void wsh_client(){

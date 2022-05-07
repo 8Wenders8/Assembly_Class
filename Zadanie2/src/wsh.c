@@ -22,14 +22,25 @@ void wsh_help(){
 }
 
 void wsh_prompt(){
-	printf(">>> ");
+	uid_t uid = geteuid();
+	struct passwd *pwuid = getpwuid(uid);
+	char hostname[BUFF_SIZE];
+	gethostname(hostname, BUFF_SIZE - 1);
+	time_t act_time;
+	struct tm *time_info;
+
+	time(&act_time);
+	time_info = localtime(&act_time);
+
+	printf("\x1B[33m(%02d:%02d)[%s@%s]$ \x1B[0m", time_info->tm_hour, time_info->tm_min, pwuid ? pwuid->pw_name : "", hostname);
+	fflush(stdout);
 }
 
-int wsh_read_socket(char **buffer, uint32_t *buffer_size){
+int wsh_read_socket(int sock, char **buffer, uint32_t *buffer_size){
 	uint32_t recv_size;
 	int ret;
 	char *temp;
-	if((ret = read(conn_fd, &recv_size, sizeof(uint32_t))) == -1)
+	if((ret = read(sock, &recv_size, sizeof(uint32_t))) == -1)
 		handle_error("read");
 	
 	if(!ret) return 0;
@@ -41,7 +52,7 @@ int wsh_read_socket(char **buffer, uint32_t *buffer_size){
 		*buffer = temp;	
 	}
 	
-	if((ret = read(conn_fd, *buffer, *buffer_size)) == -1)
+	if((ret = read(sock, *buffer, *buffer_size)) == -1)
 		handle_error("read");
 
 	return ret;
@@ -80,6 +91,79 @@ char** wsh_parse(char *buffer, uint32_t buffer_size, int *index){
 	return args;
 }
 
+
+void wsh_execute(char **args){
+	pid_t pid, wpid;
+	int status, stdout_fd[2], stderr_fd[2];
+
+	if(pipe(stdout_fd) || pipe(stderr_fd))
+		handle_error("pipe");
+	
+	if(!(pid = fork())){
+		close(1);
+		close(2);
+		dup2(stdout_fd[1], 1);
+		dup2(stderr_fd[1], 2);
+
+		close(stdout_fd[0]);
+		close(stdout_fd[0]);
+		close(stderr_fd[1]);
+		close(stderr_fd[1]);
+
+		if(execvp(args[0], args) == -1)
+			handle_error("exec");
+	} else if (pid < 0){
+		perror("fork");
+	} else {
+		char *buffer, *temp;
+		int read_len = 0, buffer_size = BUFF_SIZE;
+
+		if(!(buffer = (char*) malloc(BUFF_SIZE * sizeof(char))))
+			err_msg("Error at allocating space");
+
+		close(stdout_fd[1]);
+		close(stderr_fd[1]);
+
+		do{
+			wpid = waitpid(pid, &status, WUNTRACED);
+		} while(!WIFEXITED(status) && !WIFSIGNALED(status));
+
+		while((read_len += read(stdout_fd[0], buffer + read_len, BUFF_SIZE))){
+			if(read_len == -1)
+				handle_error("read");
+			if(read_len == buffer_size){
+				buffer_size += BUFF_SIZE;
+				if(!(temp = realloc(buffer, buffer_size)))
+					err_msg("Error at reallocating space");
+				buffer = temp;
+				continue;
+			}
+			break;
+		}
+
+		while((read_len += read(stderr_fd[0], buffer + read_len, BUFF_SIZE))){
+			if(read_len == -1)
+				handle_error("read");
+			if(read_len == buffer_size){
+				buffer_size += BUFF_SIZE;
+				if(!(temp = realloc(buffer, buffer_size)))
+					err_msg("Error at reallocating space");
+				buffer = temp;
+				continue;
+			}
+			break;
+		}
+
+		close(stdout_fd[0]);	
+		close(stderr_fd[0]);	
+
+		uint32_t send_size = htonl(buffer_size);
+		write(conn_fd, &send_size, sizeof(uint32_t));
+		write(conn_fd, buffer, buffer_size);
+	}
+}
+
+
 void wsh_server_loop(){
 	while(1){
 		wsh_server();
@@ -92,13 +176,14 @@ void wsh_server_loop(){
 			uint32_t buffer_size = BUFF_SIZE;
 			int argc = 0;
 			/* Read. */
-			if(!wsh_read_socket(&buffer, &buffer_size)){
+			if(!wsh_read_socket(conn_fd, &buffer, &buffer_size)){
 				printf("Client disconnected..\n");
 				break;
 			}
 
+			/* Parse. */
 			args = wsh_parse(buffer, buffer_size, &argc);
-			for(int i=0;i<argc;i++) printf("%s\n",args[i]);
+			//for(int i=0;i<argc;i++) printf("%s\n",args[i]);
 
 			if(!strcmp(buffer, "quit")){
 				printf("Quitting..\n");
@@ -109,8 +194,9 @@ void wsh_server_loop(){
 				// TODO FREE ARGS:for(i
 				exit(EXIT_SUCCESS);
 			}
-			/* Parse. */
+
 			/* Execute. */
+			wsh_execute(args);
 
 			memset(buffer, '\0', buffer_size);
 			if(!(buffer = (char*) realloc(buffer, BUFF_SIZE)))
@@ -123,7 +209,7 @@ void wsh_server_loop(){
 }
 
 
-void wsh_read_line(char** buffer, int* buffer_size){
+void wsh_read_line(char** buffer, uint32_t* buffer_size){
 	int index = 0, c;
 	while((c = getchar()) != EOF && c != '\n'){
 		if(index >= *buffer_size - 1){
@@ -139,7 +225,7 @@ void wsh_read_line(char** buffer, int* buffer_size){
 
 void wsh_client_loop(){
 	wsh_client();
-	int buffer_size = BUFF_SIZE;
+	uint32_t buffer_size = BUFF_SIZE;
 	char *buffer;
    	if(!(buffer = (char*) malloc(buffer_size * sizeof(char))))
 		err_msg("Error at allocating space");
@@ -153,6 +239,9 @@ void wsh_client_loop(){
 
 		write(sock_fd, buffer, buffer_size);
 		if(!strcmp(buffer, "quit") || !strcmp(buffer, "halt")) break;
+
+		wsh_read_socket(sock_fd, &buffer, &buffer_size);
+		printf("%s", buffer);
 	}
 	free(buffer);
 	close(sock_fd);
