@@ -82,7 +82,13 @@ char** wsh_parse(char *buffer, uint32_t buffer_size, int *index){
 
 		token = strtok(temp[i], " \t\r");
 		while(token){
-			args[(*index)++] = token;
+			switch(*token){
+				case '#': {args[*index] = malloc(2); strcpy(args[(*index)++], "");}; break;
+				case '|': break;
+				case ';': break; 
+				default: args[(*index)++] = token; break;
+			}	
+
 			token = strtok(NULL, " \t\r");
 		}
 	}
@@ -100,10 +106,11 @@ void wsh_execute(char **args){
 		handle_error("pipe");
 	
 	if(!(pid = fork())){
-		close(1);
-		close(2);
-		dup2(stdout_fd[1], 1);
-		dup2(stderr_fd[1], 2);
+		// Child procces
+		close(STDOUT_FILENO);
+		close(STDERR_FILENO);
+		dup2(stdout_fd[1], STDOUT_FILENO);
+		dup2(stderr_fd[1], STDERR_FILENO);
 
 		close(stdout_fd[0]);
 		close(stdout_fd[0]);
@@ -115,6 +122,7 @@ void wsh_execute(char **args){
 	} else if (pid < 0){
 		perror("fork");
 	} else {
+		// Parent procces
 		char *buffer, *temp;
 		int read_len = 0, buffer_size = BUFF_SIZE;
 
@@ -183,7 +191,6 @@ void wsh_server_loop(){
 
 			/* Parse. */
 			args = wsh_parse(buffer, buffer_size, &argc);
-			//for(int i=0;i<argc;i++) printf("%s\n",args[i]);
 
 			if(!strcmp(buffer, "quit")){
 				printf("Quitting..\n");
@@ -210,8 +217,25 @@ void wsh_server_loop(){
 
 
 void wsh_read_line(char** buffer, uint32_t* buffer_size){
-	int index = 0, c;
-	while((c = getchar()) != EOF && c != '\n'){
+	int index = 0, c, nl_limit = 0, backslash = 0;
+	while((c = getchar()) != EOF){
+		if(c == '\n'){
+			if(!nl_limit) break;
+			printf("> ");
+			continue;
+		}
+
+		if(backslash && c != '\n'){
+			backslash = 0;
+			nl_limit = 0;
+		}
+
+		if(!nl_limit && c == '\\') {
+			nl_limit = 1; 
+			backslash = 1;
+			continue;
+		}
+
 		if(index >= *buffer_size - 1){
 			*buffer_size += BUFF_SIZE;
 			if(!(*buffer = (char*) realloc(*buffer, *buffer_size * sizeof(char)))) 
@@ -220,6 +244,16 @@ void wsh_read_line(char** buffer, uint32_t* buffer_size){
 		*(*buffer + index++) = c;
 	}
 	*(*buffer + index) = '\0';
+}
+
+
+int wsh_client_write(char* buffer, uint32_t buffer_size){
+	if(*buffer == '\0' || *buffer == '#') return 1;
+	if(!strcmp(buffer, "help")) {printf("%s\n", HELP_MSG); return 1;}
+	uint32_t send_size = htonl(buffer_size);
+	write(sock_fd, &send_size, sizeof(uint32_t));
+	write(sock_fd, buffer, buffer_size);
+	return 0;
 }
 
 
@@ -233,13 +267,8 @@ void wsh_client_loop(){
 	while(1){
 		wsh_prompt();
 		wsh_read_line(&buffer, &buffer_size);
-
-		uint32_t send_size = htonl(buffer_size);
-		write(sock_fd, &send_size, sizeof(uint32_t));
-
-		write(sock_fd, buffer, buffer_size);
+		if(wsh_client_write(buffer, buffer_size)) continue;
 		if(!strcmp(buffer, "quit") || !strcmp(buffer, "halt")) break;
-
 		wsh_read_socket(sock_fd, &buffer, &buffer_size);
 		printf("%s", buffer);
 	}

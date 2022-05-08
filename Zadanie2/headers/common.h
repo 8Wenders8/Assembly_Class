@@ -22,7 +22,7 @@
 
 #define MY_SOCK_PATH "/tmp/sckt"
 #define LISTEN_BACKLOG 50
-#define HELP_MSG	"Interactive shell by Matej Volansky.\nFormat: wsh [OPTIONS]"
+#define HELP_MSG	"NAME\n\twsh - SPAASM Wenders SHell\nSYNOPSIS\n\twsh [OPTIONS]\nDESCRIPTION\n\tInteractive shell by Matej Volansky. Running wsh without any arguments leads to running as server listening to default socket (/tmp/sckt).\nOPTIONS\n\t-s\t\tStart shell as server. Also default without any arguments.\n\t-c\t\tStart shell as client.\n\t-u [PATH]\tSpecify socket path.\n\t-p [PORT]\tSpecify TCP port.\n\t-h\t\tPrint out help message.\nCOMMANDS\n\thelp\t\tPrint out help message.\n\tquit\t\tDisconnect from the server.\n\thalt\t\tQuit both the server and all the clients."
 
 #define BUFF_SIZE	256
 
