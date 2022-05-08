@@ -16,6 +16,7 @@
 #include "../headers/args.h"
 #include "../headers/conn.h"
 
+
 void wsh_help(){
 	printf("%s\n", HELP_MSG); 
 	exit(EXIT_SUCCESS);
@@ -35,6 +36,7 @@ void wsh_prompt(){
 	printf("\x1B[33m(%02d:%02d)[%s@%s]$ \x1B[0m", time_info->tm_hour, time_info->tm_min, pwuid ? pwuid->pw_name : "", hostname);
 	fflush(stdout);
 }
+
 
 int wsh_read_socket(int sock, char **buffer, uint32_t *buffer_size){
 	uint32_t recv_size;
@@ -84,11 +86,8 @@ char** wsh_parse(char *buffer, uint32_t buffer_size, int *index){
 		while(token){
 			switch(*token){
 				case '#': {args[*index] = malloc(2); strcpy(args[(*index)++], "");}; break;
-				case '|': break;
-				case ';': break; 
 				default: args[(*index)++] = token; break;
 			}	
-
 			token = strtok(NULL, " \t\r");
 		}
 	}
@@ -189,6 +188,15 @@ void wsh_server_loop(){
 				break;
 			}
 
+			int semi_count = 0, quote = 0;
+			for(int i = 0; i < buffer_size; i++){
+				if(buffer[i] == '"')
+					quote = !quote;
+				if(quote) continue;
+				semi_count += (buffer[i] == ';');
+			}
+			printf("%d", semi_count);
+
 			/* Parse. */
 			args = wsh_parse(buffer, buffer_size, &argc);
 
@@ -203,7 +211,34 @@ void wsh_server_loop(){
 			}
 
 			/* Execute. */
-			wsh_execute(args);
+			uint32_t send_size = htonl(semi_count);
+			write(conn_fd, &send_size, sizeof(uint32_t));
+
+			char **arg_cpy = (char**) malloc(buffer_size * sizeof(char*));
+			int semi_num = 0, offset = 0, start_semi = 1;
+			do{
+				int cpy_index = 0;
+				for(int i = offset; i < argc; i++){
+					start_semi = 1;
+					if(**(args + i) == ';'){
+						if(strlen(*(args + i)) > 1){
+							*(args + i) = *(args + i) + 1;
+							start_semi = 0;
+						}
+						semi_num++;
+						break;
+					}
+					if(*(*(args + i) + strlen(*(args + i))) == ';' ){
+						semi_num++;
+						break;
+					}
+					arg_cpy[cpy_index] = malloc(strlen(*(args + i)) + 1);
+					strcpy(arg_cpy[cpy_index++], *(args + i));
+				} 
+				arg_cpy[cpy_index] = NULL;
+				wsh_execute(arg_cpy);
+				offset = cpy_index + start_semi;
+			} while(semi_num-- > 0);
 
 			memset(buffer, '\0', buffer_size);
 			if(!(buffer = (char*) realloc(buffer, BUFF_SIZE)))
@@ -256,6 +291,15 @@ int wsh_client_write(char* buffer, uint32_t buffer_size){
 	return 0;
 }
 
+void wsh_client_read(char* buffer, uint32_t buffer_size){
+	uint32_t recv_size;
+	if((read(sock_fd, &recv_size, sizeof(uint32_t))) == -1)
+		handle_error("read");
+	for(int i = 0; i < ntohl(recv_size) + 1; i++){
+		wsh_read_socket(sock_fd, &buffer, &buffer_size);
+		printf("%s", buffer);
+	}
+}
 
 void wsh_client_loop(){
 	wsh_client();
@@ -269,8 +313,7 @@ void wsh_client_loop(){
 		wsh_read_line(&buffer, &buffer_size);
 		if(wsh_client_write(buffer, buffer_size)) continue;
 		if(!strcmp(buffer, "quit") || !strcmp(buffer, "halt")) break;
-		wsh_read_socket(sock_fd, &buffer, &buffer_size);
-		printf("%s", buffer);
+		wsh_client_read(buffer, buffer_size);
 	}
 	free(buffer);
 	close(sock_fd);
